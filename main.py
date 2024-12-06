@@ -1,61 +1,55 @@
 #!/usr/bin/python
 """
 The issue is that when we remove outputs with to many syllables
-we may get a word which doesnt map to anything. I do not know how we 
-should handle this.
+we may get a word which doesnt map to anything. 
+We are currently handling this by setting the new word to Alice.
 
 Also, make it so that it remembers more previous states.
 Currently hardcoded to only one previous state
+
+Another thing that could be improved is to use scipy sparse matrices.
 """
 import syllables
-#import pandas as pd
 import numpy as np
-import re
-from random import choices
+import random
 from collections import Counter
+from sys import stderr
 
 def main():
-    """
-    dat = pd.read_csv("elonmusk.csv", sep=",", header=0)
-    dat=dat["Text"].apply(clean_text)
-    dat = dat.loc[dat.apply(lambda x: bool(x.strip()))] #empty string evaluates to false
-    dat = dat[:1000]
-    print("joining...")
-    corpus = " ".join(dat)
-    print("joined")
-    """
     f = open("alice_in_wonderland.txt", "r")
     corpus=f.read()
     f.close()
-    print("generating matrix (extremely inefficient)")
+    print("generating matrix (extremely inefficient)", file=stderr)
     words, mat = create_transition_matrix(20000, corpus)
-    print("generated matrix")
-    initial_state = np.zeros((mat.shape[0], 1))
-    initial_state[0]=1
-    print(generate_text(90, words, mat, initial_state))
+    print("generated matrix\n", file=stderr)
+    print("matrix multiplying... (also extremely inefficient)\n", file=stderr)
+    print(create_haikus(1, mat, words, 0))
     return
 
-def clean_text(text):
-    # Remove URLs (http://, https://, www)
-    text = re.sub(r'http\S+|www\S+', '', text)
-    
-    # Remove words starting with '@'
-    text = re.sub(r'\s?@\w+', '', text)
-    return remove_emojis(text)
-
-def generate_text(nwords, words, transition_matrix, initial_state):
-    text=""
-    state=initial_state
-    for _ in range(nwords):
-        if (sum(state)==0):
-            return text
-        i = choices(range(0, len(state)), state)[0]
-        text = " ".join([text, words[i]])
-        #text = " ".join([text, choices(words, state)[0]])
+def generate_text(n_words, words, transition_matrix, initial_state):
+    text=words[initial_state]
+    state=np.zeros((transition_matrix.shape[0], 1))
+    i=initial_state
+    for _ in range(n_words):
         state[:]=0
         state[i]=1
         state=np.matmul(transition_matrix, state)
+        if (sum(state)==0):
+            print("no connections from state=\"%s\"", words[i], file=stderr)
+            i=random.randint(0,n_words)
+        else:
+            i = random.choices(range(0, len(state)), list(state))[0]
+        text = " ".join([text, words[i]])
     return text
+
+# returns state index
+def next_stateindex(transition_matrix, current_state):
+    v = np.matmul(transition_matrix, current_state)
+
+    if(sum(map(abs,v)) <= 0): #placeholder
+        return 0
+    i = random.choices(range(0, len(v)), v)[0]
+    return i
 
 # Set some rows of matrix to 0 and reweight columns to 1
 def mutate_matrix(mat, indices):
@@ -65,6 +59,43 @@ def mutate_matrix(mat, indices):
         colsum=sum(mat[:, i])
         if(colsum != 0):
             mat[:, i] = mat[:,i] / colsum
+    return mat
+
+# we could make it more efficient by removing indices from 
+# matrices already removed from but cba
+def create_syllable_matrixes(transition_matrix, words):
+    mat_list = []
+    for i in range(1,8): # python ranges are not inclusive dumbo
+        li = unacceptable_indices(i, words)
+        mat_list.append(mutate_matrix(transition_matrix.copy(), li))
+    return mat_list
+
+def create_haikus(n_haikus, transition_matrix, words, initial_stateindex): 
+    state=np.zeros((transition_matrix.shape[0], 1))
+    i = initial_stateindex
+    state[i]=1
+    lines=[]
+    lines.append([words[i]])
+    mat_list = create_syllable_matrixes(transition_matrix, words)
+    sylls_used = syllables.estimate(words[i])
+    l=[5,7,5]
+    for k in range(0,3):
+        while(sylls_used < l[k]):
+            j = i
+            i = next_stateindex(mat_list[l[k]-1-sylls_used], state)
+            sylls_used+=syllables.estimate(words[i])
+            state[j]=0 #state[:]=0
+            state[i]=1
+            lines[k].append(words[i])
+        lines[k].append("\n")
+        lines.append([])
+        if(sylls_used != l[k]): #WARNING: PLACEHOLDER. This is if we get an unconnected word which makes Alice to long of a word
+            return create_haikus(n_haikus, transition_matrix, words, initial_stateindex)
+        sylls_used=0
+
+    lines = map(lambda l: " ".join(l), lines)
+    return "".join(lines)
+    
 
 # get indices of words which have too many syllables
 def unacceptable_indices(max_syllables, words):
@@ -73,32 +104,14 @@ def unacceptable_indices(max_syllables, words):
         if(syllables.estimate(words[i]) > max_syllables):
             indices.append(i)
     return indices
-
-
-def remove_emojis(text):
-    # Regex pattern to match emojis based on their Unicode ranges
-    emoji_pattern = re.compile(
-        "[\U0001F600-\U0001F64F"
-        "\U0001F300-\U0001F5FF"
-        "\U0001F680-\U0001F6FF"
-        "\U0001F700-\U0001F77F"
-        "\U0001F780-\U0001F7FF"
-        "\U0001F800-\U0001F8FF"
-        "\U0001F900-\U0001F9FF"
-        "\U0001FA00-\U0001FA6F"
-        "\U0001FA70-\U0001FAFF"
-        "\U00002702-\U000027B0"
-        "\U000024C2-\U0001F251"
-        "]+", flags=re.UNICODE)
-    
-    return re.sub(emoji_pattern, '', text)
-
 # This returns a matrix A where each column sums to one, assuming the word the column represents
 # is not both unique and the last word (then it does not transform to a new word)
 # Ax where x is a vector with some word gives us a new vector which is of the probabilities of each word
-def create_transition_matrix(nwords, corpus):
+#
+#TODO: we do not need d_new and c_new
+def create_transition_matrix(n_words, corpus):
     corpus=corpus.split()
-    corpus=corpus[:nwords]
+    corpus=corpus[:n_words]
     d = {}
     for w in corpus:
         d[w]=Counter()
@@ -124,8 +137,5 @@ def create_transition_matrix(nwords, corpus):
             ycount+=1
         xcount+=1
     return (uniques, arr)
-    
-
-
 
 main()
