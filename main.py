@@ -17,7 +17,7 @@ from collections import Counter
 from sys import stderr
 
 ORDER = 2
-N_TRAIN_WORDS = 60000
+N_TRAIN_WORDS = 2000
 PUNCTUATION_MARKS = [".", "!", "?", ";", ":", "--"]
 
 #nltk.download("cmudict")
@@ -25,14 +25,15 @@ cmudict_dict = cmudict.dict()
 
 def main():
     random.seed()
-    f = open("asv_formatted.txt", "r")
+    #f = open("asv_formatted.txt", "r")
+    f = open("alice_in_wonderland.txt", "r")
     corpus=f.read()
     f.close()
     print("generating matrix (extremely inefficient)", file=stderr)
     words, mat, word_tuples, possible_final_words, possible_start_indices = create_transition_matrix(corpus)
     print("generated matrix\n", file=stderr)
     print("matrix multiplying... (also extremely inefficient)\n", file=stderr)
-    print(create_haikus(10, mat, words, word_tuples, possible_final_words, [0]))
+    print(create_haikus(10, mat, words, word_tuples, possible_final_words, possible_start_indices))
     return
 
 def syllables(word):
@@ -85,13 +86,12 @@ def create_haikus(n_haikus, transition_matrix, words, word_tuples, possible_fina
 
 # when random initials it is most likely that it is the initial condition which messes things up
 def create_haiku_internal(mat_list, words, initial_stateindex, word_tuples, possible_final_words): 
-    #Jag fixade så att man kan ha Markovkedjor av andra ordningar än 1 (avgörs av ORDER)  previous_word_indices är en lista med index för de ord som tidigare använts
     state=np.zeros((mat_list[0].shape[1], 1))
-    i = initial_stateindex
+    i = word_tuples.index((words[initial_stateindex],))
     state[i]=1
-    lines = [[words[i]]]
-    previous_words = [words[i]]
-    sylls_used = syllables(words[i])
+    lines = [[words[initial_stateindex]]]
+    previous_words = [words[initial_stateindex]]
+    sylls_used = syllables(words[initial_stateindex])
     l=[5,7,5]
     for k in range(0,3):
         while(sylls_used < l[k]):
@@ -138,10 +138,10 @@ def unacceptable_indices(max_syllables, words):
 # is not both unique and the last word (then it does not transform to a new word)
 # Ax where x is a vector with some word gives us a new vector which is of the probabilities of each word
 def create_transition_matrix(corpus):
-    corpus=corpus[:N_TRAIN_WORDS] # cut the training data to the size we want
     corpus = "".join(char for i, char in enumerate(corpus) 
                      if (char.isalpha() or char in ([" ", "\n", "-"] + PUNCTUATION_MARKS) or (char == "'" and i-1 >= 0 and corpus[i-1].isalpha())))
     corpus=corpus.split()
+    corpus=corpus[:N_TRAIN_WORDS] # cut the training data to the size we want
     possible_final_words = []
     for i in range(1, len(corpus)):
         if corpus[i].strip()[-1] in PUNCTUATION_MARKS:
