@@ -17,22 +17,22 @@ from collections import Counter
 from sys import stderr
 
 ORDER = 2
-N_TRAIN_WORDS = 20000
-PUNCTUATION_MARKS = [",", ".", "!", "?", ";", ":", "--"]
+N_TRAIN_WORDS = 60000
+PUNCTUATION_MARKS = [".", "!", "?", ";", ":", "--"]
 
-nltk.download("cmudict")
+#nltk.download("cmudict")
 cmudict_dict = cmudict.dict()
 
 def main():
     random.seed()
-    f = open("alice_in_wonderland.txt", "r")
+    f = open("asv_formatted.txt", "r")
     corpus=f.read()
     f.close()
     print("generating matrix (extremely inefficient)", file=stderr)
     words, mat, word_tuples, possible_final_words, possible_start_indices = create_transition_matrix(corpus)
     print("generated matrix\n", file=stderr)
     print("matrix multiplying... (also extremely inefficient)\n", file=stderr)
-    print(create_haikus(10, mat, words, word_tuples, possible_final_words, possible_start_indices))
+    print(create_haikus(10, mat, words, word_tuples, possible_final_words, [0]))
     return
 
 def syllables(word):
@@ -78,7 +78,7 @@ def create_haikus(n_haikus, transition_matrix, words, word_tuples, possible_fina
     mat_list = create_syllable_matrixes(transition_matrix, words)
     while(len(haikus) < n_haikus):
         initial_stateindex = random.choice(possible_start_indices)
-        t = create_haiku_internal(mat_list, words, 0, word_tuples, possible_final_words)
+        t = create_haiku_internal(mat_list, words, initial_stateindex, word_tuples, possible_final_words)
         if t != None:
             haikus.append(t)
     return "\n\n".join(haikus)+"\n"
@@ -106,7 +106,9 @@ def create_haiku_internal(mat_list, words, initial_stateindex, word_tuples, poss
             state[j]=0
             for m in range(-ORDER,0):
                 try:
+                    #print("hello there, word is ", word_tuples[i])
                     i = word_tuples.index(tuple(previous_words[m:]))
+                    #print("we got word ", word_tuples[i])
                     break
                 except ValueError:       #om tupeln inte finns med i listan
                     pass
@@ -118,7 +120,7 @@ def create_haiku_internal(mat_list, words, initial_stateindex, word_tuples, poss
         return None
         #return create_haiku_internal(mat_list, words, initial_stateindex, word_tuples, possible_final_words)
     lines.pop(-1)    #tar bort den tomma raden i slutet
-    if lines[-1][-1][-1] in [",", ";"]:
+    if lines[-1][-1][-1] in [",", ";", ":", "--"]:
         lines[-1][-1] = lines[-1][-1][:-1]     #tar bort skiljetecknet i slutet av sista ordet om det är , eller ;
     lines = map(lambda l: " ".join(l), lines)
     return "\n".join(lines)
@@ -164,7 +166,6 @@ def create_transition_matrix(corpus):
             c_new[w] = n/s
         d_new[key]=c_new
     d=d_new
-
 
     
     unique_single_words = list(dict.fromkeys(corpus))
